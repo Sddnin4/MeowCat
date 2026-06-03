@@ -1,12 +1,20 @@
 name: ThoiTietBonMua
-version: 1.1
+version: 2.0
 main: me.tuicode.thoitietbonmua.ThoiTietBonMua
 api-version: '1.21'
 author: Xnos
-description: Hệ thống thời tiết bốn mùa và Scoreboard tối ưu cho 1.21!
+description: "Hệ thống thời tiết bốn mùa v2.0 cho Paper 1.21 - SMP 10A1"
+
+permissions:
+  thoitiet.player:
+    description: "Quyền xem thông tin mùa (/season info)"
+    default: true
+  thoitiet.admin:
+    description: "Quyền ép mùa bằng /season set và /season reset"
+    default: op
+
 commands:
   season:
-    description: "Lenh quan ly thoi tiet bon mua cua server 10A1 SMP"
+    description: "Quản lý hệ thống thời tiết bốn mùa"
     permission: thoitiet.player
-    usage: /<command>
-    
+    usage: "/season <info|set <xuan|ha|thu|dong>|reset>"
