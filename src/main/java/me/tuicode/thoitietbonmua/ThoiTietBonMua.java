@@ -1059,7 +1059,7 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         // Hiện trạng đặc biệt theo mùa
         String trangThaiMua;
         switch (muaHienTai) {
-            case "xuan" -> trangThaiMua = "§aPháp: Luck V";
+            case "xuan" -> trangThaiMua = "§a✨ Phúc: Luck V";
             case "ha"   -> {
                 boolean nangNong = isDungDuoiTroiNang(player, world);
                 trangThaiMua = nangNong ? "§6☀ Nóng bức!" : "§eMát mẻ";
@@ -1072,24 +1072,14 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         }
 
         String tagEp = (overrideMua != null) ? " §c[Ép]" : "";
+        String conLai = (overrideMua == null) ? " §7(" + ngayConLai + "n)" : " §c[Ép]";
 
-        setDong(obj, "§7──────────────────", 15);
-        setDong(obj, "§f👤 " + player.getName(), 14);
-        setDong(obj, "§7──────────────────", 13);
-        setDong(obj, "§aOnline: §f" + soOnline + " người", 12);
-        setDong(obj, "§eNgày Map: §f" + tongNgay, 11);
-        setDong(obj, "§7──────────────────", 10);
-        setDong(obj, maMauMua + "Mùa: " + tenMuaHienThi + tagEp, 9);
-        if (overrideMua == null) {
-            setDong(obj, "§7Còn lại: §f" + ngayConLai + " ngày", 8);
-        } else {
-            setDong(obj, "§cChế độ ép mùa", 8);
-        }
-        setDong(obj, trangThaiMua, 7);
-        setDong(obj, "§7──────────────────", 6);
-        setDong(obj, "§7Thời Gian:", 5);
-        setDong(obj, iconThoiGian + " §f" + tenThoiGian, 4);
-        setDong(obj, "§7──────────────────", 3);
+        // Scoreboard gọn: 7 dòng, không có kẻ ngang
+        setDong(obj, "§f" + player.getName(), 7);
+        setDong(obj, "§7Online §f" + soOnline + " §7| Ngày §f" + tongNgay, 6);
+        setDong(obj, maMauMua + tenMuaHienThi + conLai, 5);
+        setDong(obj, trangThaiMua, 4);
+        setDong(obj, iconThoiGian + " §f" + tenThoiGian, 3);
 
         player.setScoreboard(board);
     }
