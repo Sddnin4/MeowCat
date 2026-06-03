@@ -1,9 +1,9 @@
 name: ThoiTietBonMua
-version: 2.0
+version: 2.1
 main: me.tuicode.thoitietbonmua.ThoiTietBonMua
 api-version: '1.21'
 author: Xnos
-description: "Hệ thống thời tiết bốn mùa v2.0 cho Paper 1.21 - SMP 10A1"
+description: "Hệ thống thời tiết bốn mùa v2.1 cho Paper 1.21 - SMP 10A1"
 
 permissions:
   thoitiet.player:
