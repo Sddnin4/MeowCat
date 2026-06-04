@@ -1187,7 +1187,7 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         ScoreboardManager manager = getServer().getScoreboardManager();
         Scoreboard board          = manager.getNewScoreboard();
 
-        Component title = Component.text("❖  10A1 SMP  ❖")
+        Component title = Component.text("❖ 10A1 SMP ❖")
                 .color(NamedTextColor.GOLD).decorate(TextDecoration.BOLD);
 
         Objective obj = board.registerNewObjective("smp_info", Criteria.DUMMY, title);
@@ -1200,18 +1200,18 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
 
         String iconThoiGian;
         String tenThoiGian;
-        if (timeOfDay < 1000 || timeOfDay > 23000)    { iconThoiGian = "🌅"; tenThoiGian = "Bình Minh"; }
-        else if (timeOfDay < 12000)                    { iconThoiGian = "☀";  tenThoiGian = "Ban Ngày"; }
-        else if (timeOfDay < 13000)                    { iconThoiGian = "🌇"; tenThoiGian = "Hoàng Hôn"; }
-        else                                           { iconThoiGian = "🌙"; tenThoiGian = "Ban Đêm"; }
+        if (timeOfDay < 1000 || timeOfDay > 23000)    { iconThoiGian = "🌅"; tenThoiGian = "Sáng"; }
+        else if (timeOfDay < 12000)                    { iconThoiGian = "☀";  tenThoiGian = "Ngày"; }
+        else if (timeOfDay < 13000)                    { iconThoiGian = "🌇"; tenThoiGian = "Chiều"; }
+        else                                           { iconThoiGian = "🌙"; tenThoiGian = "Đêm"; }
 
         String tenMuaHienThi;
         String maMauMua;
         switch (muaHienTai) {
-            case "xuan" -> { tenMuaHienThi = "🌸 Xuân"; maMauMua = "§a"; }
-            case "ha"   -> { tenMuaHienThi = "☀ Hạ";   maMauMua = "§e"; }
-            case "thu"  -> { tenMuaHienThi = "🍂 Thu";  maMauMua = "§6"; }
-            default     -> { tenMuaHienThi = "❄ Đông"; maMauMua = "§b"; }
+            case "xuan" -> { tenMuaHienThi = "Xuân"; maMauMua = "§a"; }
+            case "ha"   -> { tenMuaHienThi = "Hạ";   maMauMua = "§e"; }
+            case "thu"  -> { tenMuaHienThi = "Thu";  maMauMua = "§6"; }
+            default     -> { tenMuaHienThi = "Đông"; maMauMua = "§b"; }
         }
 
         // Hiện trạng đặc biệt theo mùa
@@ -1233,11 +1233,11 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         String conLai = (overrideMua == null) ? " §7(" + ngayConLai + "n)" : " §c[Ép]";
 
         // Scoreboard: giống ảnh mẫu — nhãn trái, không số cạnh phải
-        setDong(obj, "§fTên: §e" + player.getName(), 8);
-        setDong(obj, "§fOnline: §a" + soOnline + "/20", 7);
-        setDong(obj, "§fNgày: §e" + tongNgay, 6);
-        setDong(obj, "§fMùa: " + maMauMua + tenMuaHienThi + tagEp, 5);
-        setDong(obj, "§fThời gian: " + iconThoiGian + " §f" + tenThoiGian, 4);
+        setDong(obj, "§fTên: §e" + player.getName(), 5);
+        setDong(obj, "§fOnline: §a" + soOnline + "/20", 4);
+        setDong(obj, "§fNgày: §e" + tongNgay, 3);
+        setDong(obj, "§fMùa: " + maMauMua + tenMuaHienThi + tagEp, 2);
+        setDong(obj, "§fThời gian: " + iconThoiGian + " §f" + tenThoiGian, 1);
 
         player.setScoreboard(board);
     }
