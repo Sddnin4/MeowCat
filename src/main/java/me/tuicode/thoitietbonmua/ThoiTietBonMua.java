@@ -5,6 +5,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.*;
+import org.bukkit.TreeType;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.block.data.BlockData;
@@ -38,7 +39,7 @@ import java.util.HashSet;
 
 /**
  * ╔══════════════════════════════════════════════════════╗
- *   ThoiTietBonMua v2.1 — Paper 1.21
+ *   ThoiTietBonMua v2.2 — Paper/Purpur 1.21
  *   Tác giả: Xnos  |  Nâng cấp: Claude
  * ╠══════════════════════════════════════════════════════╣
  *   Chu kỳ 360 ngày / 4 mùa / 90 ngày mỗi mùa
@@ -111,6 +112,13 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
     /** Đếm ticks để trigger sét mùa hạ (mỗi 10 giây = 200 ticks). */
     private int tickerSet = 0;
 
+    // ── Vòng lặp ngày (24000 ticks) ──────────────────────────────
+    /** Ngày cuối cùng đã xử lý broadcast đông — tránh spam mỗi giây. */
+    private long ngayDongCuoi = -1;
+
+    /** True nếu server đang trong trạng thái Mùa Đông broadcast (ngày 271–360). */
+    private boolean dangMuaDong = false;
+
     // ══════════════════════════════════════════════════════════════
     //  LIFECYCLE
     // ══════════════════════════════════════════════════════════════
@@ -118,7 +126,7 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
     @Override
     public void onEnable() {
         getLogger().info("╔══════════════════════════════════════╗");
-        getLogger().info("  ThoiTietBonMua v2.1 đã khởi động!");
+        getLogger().info("  ThoiTietBonMua v2.2 đã khởi động!");
         getLogger().info("╚══════════════════════════════════════╝");
 
         getServer().getPluginManager().registerEvents(this, this);
@@ -128,11 +136,12 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         }
 
         chayHeThongCore();
+        chayVongLapNgay();
     }
 
     @Override
     public void onDisable() {
-        getLogger().info("ThoiTietBonMua v2.1 đã tắt.");
+        getLogger().info("ThoiTietBonMua v2.2 đã tắt.");
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -200,6 +209,117 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
                 if (tickerMuaAxit >= TICKS_MUA_AXIT) tickerMuaAxit = 0;
             }
         }.runTaskTimer(this, 0L, 20L);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  VÒNG LẶP NGÀY (24000 ticks = 1 ngày Minecraft)
+    //  Xử lý broadcast + ép bão mùa đông theo yêu cầu standalone
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * Runnable chạy đúng mỗi 24000 ticks (= 1 ngày Minecraft).
+     *
+     * Logic chu kỳ 360 ngày:
+     *   Ngày   1 – 270 : thời tiết bình thường (trời quang)
+     *   Ngày 271 – 360 : Mùa Đông — ép bão/tuyết, broadcast hàng ngày
+     *
+     * Khi overrideMua != null (Admin đang ép mùa), vòng lặp ngày
+     * vẫn chạy nhưng không ghi đè override.
+     */
+    private void chayVongLapNgay() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                World world = getServer().getWorlds().get(0);
+                long ngayHienTai = getTongSoNgayMap(world);
+
+                // Tránh xử lý trùng cùng 1 ngày
+                if (ngayHienTai == ngayDongCuoi) return;
+                ngayDongCuoi = ngayHienTai;
+
+                // Ngày trong chu kỳ 360 (1 - 360)
+                long ngayTrongChuKy = (ngayHienTai % TONG_NGAY_CHU_KY) + 1;
+
+                boolean laMuaDong = ngayTrongChuKy > 270; // ngày 271–360
+
+                if (laMuaDong) {
+                    long ngayTrongDong = ngayTrongChuKy - 270; // 1–90
+                    long ngayConLaiDong = 90 - ngayTrongDong + 1;
+
+                    // Ép bão/tuyết trên mọi world (nếu không bị override sang mùa khác)
+                    if (overrideMua == null || overrideMua.equals("dong")) {
+                        for (World w : getServer().getWorlds()) {
+                            if (w.getEnvironment() == World.Environment.NORMAL) {
+                                w.setStorm(true);
+                                w.setWeatherDuration(25000); // đảm bảo không tự hết trước ngày tiếp
+                                w.setThundering(false);      // không sấm sét — chỉ tuyết
+                            }
+                        }
+                    }
+
+                    // Broadcast đầu mùa (ngày đầu tiên)
+                    if (!dangMuaDong) {
+                        dangMuaDong = true;
+                        broadcastMuaDongBatDau();
+                    } else {
+                        // Broadcast hàng ngày trong mùa đông
+                        broadcastMuaDongHangNgay(ngayTrongDong, ngayConLaiDong);
+                    }
+
+                } else {
+                    // Thời tiết bình thường: trời quang nếu không bị override
+                    if (overrideMua == null) {
+                        for (World w : getServer().getWorlds()) {
+                            if (w.getEnvironment() == World.Environment.NORMAL && w.hasStorm()) {
+                                w.setStorm(false);
+                                w.setThundering(false);
+                            }
+                        }
+                    }
+                    dangMuaDong = false;
+                }
+            }
+        }.runTaskTimer(this, 0L, TICKS_MOI_NGAY);
+    }
+
+    // ─── Broadcast Mùa Đông ──────────────────────────────────────
+
+    /** Phát đi khi Mùa Đông bắt đầu (ngày 271). */
+    private void broadcastMuaDongBatDau() {
+        String line = "§b§l❄═══════════════════════════════════❄";
+        getServer().broadcastMessage(line);
+        getServer().broadcastMessage("§f  ❄  §b§lMÙA ĐÔNG §fĐÃ BẮT ĐẦU! §f❄");
+        getServer().broadcastMessage("§7  Tuyết rơi phủ khắp thế giới trong §f90 ngày§7 tới.");
+        getServer().broadcastMessage("§7  Hãy chuẩn bị §fgiáp da §7và §fngồi cạnh lửa §7để giữ ấm!");
+        getServer().broadcastMessage(line);
+
+        // Title toàn server
+        Title.Times times = Title.Times.times(
+                java.time.Duration.ofMillis(500),
+                java.time.Duration.ofMillis(4000),
+                java.time.Duration.ofMillis(1000)
+        );
+        Title title = Title.title(
+                Component.text("❄  MÙA ĐÔNG  ❄").color(NamedTextColor.AQUA).decorate(TextDecoration.BOLD),
+                Component.text("Tuyết rơi bắt đầu... Hãy giữ ấm!").color(NamedTextColor.WHITE),
+                times
+        );
+        for (Player p : getServer().getOnlinePlayers()) {
+            p.showTitle(title);
+            p.playSound(p.getLocation(), Sound.AMBIENT_UNDERWATER_LOOP, 0.8f, 0.8f);
+        }
+
+        getLogger().info("[MuaDong] Mùa Đông bắt đầu — ngày 271 của chu kỳ.");
+    }
+
+    /** Phát đi mỗi sáng trong mùa đông (ngày 272 trở đi). */
+    private void broadcastMuaDongHangNgay(long ngayTrongDong, long ngayConLai) {
+        String mauSo = ngayConLai <= 10 ? "§c" : ngayConLai <= 30 ? "§e" : "§f";
+        getServer().broadcastMessage(
+                "§b❄ §fMùa Đông — Ngày §b" + ngayTrongDong + "§f/90  |  "
+                + "Còn " + mauSo + ngayConLai + " ngày §ftrước khi trời ấm lại."
+        );
+        getLogger().info("[MuaDong] Ngày " + ngayTrongDong + "/90, còn " + ngayConLai + " ngày.");
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -403,9 +523,6 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
 
         // Luck V — phúc lớn mùa xuân
         player.addPotionEffect(new PotionEffect(PotionEffectType.LUCK, 60, 4, true, false));
-
-        player.sendActionBar(Component.text("🌸 Mùa Xuân | Phúc lành tràn đầy — Vạn vật sinh sôi!")
-                .color(NamedTextColor.GREEN));
     }
 
     // ─── MÙA HẠ ──────────────────────────────────────────────────────────
@@ -436,12 +553,7 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
 
             // Đói I
             player.addPotionEffect(new PotionEffect(PotionEffectType.HUNGER, 80, 0, true, false));
-
-            player.sendActionBar(Component.text("☀ Mùa Hạ | Nóng bức! Nhảy xuống nước hoặc uống nước giải nhiệt!")
-                    .color(NamedTextColor.GOLD));
         } else {
-            player.sendActionBar(Component.text("☀ Mùa Hạ | Mát mẻ dưới bóng râm.")
-                    .color(NamedTextColor.YELLOW));
         }
     }
 
@@ -477,11 +589,7 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
                 loc.getWorld().spawnParticle(Particle.FALLING_WATER,
                         loc.clone().add(ox, 2.5, oz), 1);
             }
-            player.sendActionBar(Component.text("🍂 Mùa Thu | Mưa axit! Vào nhà ngay!")
-                    .color(NamedTextColor.RED));
         } else {
-            player.sendActionBar(Component.text("🍂 Mùa Thu | Lá vàng rơi — Mùa bội thu!")
-                    .color(NamedTextColor.GOLD));
         }
     }
 
@@ -515,24 +623,24 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
             }
         }
 
-        // Logic đông cứng
+        // Logic đông cứng — áp dụng MỌI biome, không check highestBlockY
         boolean macDoDa       = checkMacDoDa(player);
         boolean ganNguonNhiet = checkGanNguonNhiet(player);
+        boolean coMai         = coMaiche(player); // dùng raycast, đúng mọi biome
 
-        if (macDoDa || ganNguonNhiet) {
-            player.setFreezeTicks(0);
-            String lyDo = macDoDa ? "Giáp da giữ ấm" : "Gần nguồn nhiệt";
-            player.sendActionBar(Component.text("❄ Mùa Đông | " + lyDo + " — An toàn!")
-                    .color(NamedTextColor.AQUA));
+        if (macDoDa || ganNguonNhiet || coMai) {
+            // An toàn: reset đóng băng
+            if (player.getFreezeTicks() > 0) {
+                player.setFreezeTicks(Math.max(0, player.getFreezeTicks() - 10));
+            }
+            String lyDo = macDoDa ? "Giáp da giữ ấm" : coMai ? "Trong nhà" : "Gần nguồn nhiệt";
         } else {
-            int freeze = Math.min(player.getFreezeTicks() + 5, 140);
+            // Ngoài trời, không bảo vệ: tăng FreezeTicks — màn hình đóng băng dần
+            // Paper tự render overlay đóng băng khi FreezeTicks > getMaxFreezeTicks()/2
+            int freeze = Math.min(player.getFreezeTicks() + 7, 140);
             player.setFreezeTicks(freeze);
             if (timeOfDay >= 13000 || timeOfDay < 1000) {
-                player.sendActionBar(Component.text("❄ Mùa Đông | Sương mù lạnh giá bao phủ! Mặc giáp da hoặc đứng gần lửa!")
-                        .color(NamedTextColor.RED));
             } else {
-                player.sendActionBar(Component.text("❄ Mùa Đông | Lạnh buốt xương! Tìm nguồn nhiệt ngay!")
-                        .color(NamedTextColor.RED));
             }
         }
     }
@@ -569,17 +677,33 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         if (!world.hasStorm()) return;
         if (player.isInWater()) return;
 
-        Location loc = player.getLocation();
-        // Kiểm tra có mái che không (highest block tại vị trí)
-        int highestY = world.getHighestBlockYAt(loc);
-        if (loc.getBlockY() < highestY) return; // có mái che
+        // Kiểm tra mái che thực: quét từng block từ đầu người lên trần
+        // Hoạt động đúng trên MỌI biome (kể cả rừng, sa mạc, nether...)
+        if (coMaiche(player)) return;
 
-        // Không gây chết: chỉ damage nếu health > 1
-        if (player.getHealth() > 1.0) {
-            player.damage(1.0); // 0.5 tim = 1 HP
-            player.sendActionBar(Component.text("🌧 Mưa Axit! Vào mái che ngay!")
-                    .color(NamedTextColor.DARK_RED));
+        // 1 tim = 2 HP, không gây chết
+        if (player.getHealth() > 2.0) {
+            player.damage(2.0);
         }
+    }
+
+    /**
+     * Trả về true nếu có ít nhất 1 block solid phía trên đầu người chơi
+     * (quét từ y+2 lên y+256 hoặc đến build limit).
+     * Phương pháp này chính xác hơn getHighestBlockYAt trên mọi biome.
+     */
+    private boolean coMaiche(Player player) {
+        Location loc = player.getLocation();
+        World world = loc.getWorld();
+        int px = loc.getBlockX();
+        int pz = loc.getBlockZ();
+        int startY = loc.getBlockY() + 2; // từ trên đầu
+        int maxY = Math.min(world.getMaxHeight(), startY + 256);
+        for (int y = startY; y < maxY; y++) {
+            Block b = world.getBlockAt(px, y, pz);
+            if (b.getType().isSolid() && b.getType().isOccluding()) return true;
+        }
+        return false;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -654,25 +778,38 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
             if (!player.getWorld().equals(world)) continue;
 
             Location loc = player.getLocation();
-            int attempts = 0;
-            int maxAttempts = 5;
+            int found = 0;
 
-            while (attempts < maxAttempts) {
-                attempts++;
+            // Thử tìm tối đa 8 block cỏ trong bán kính 16
+            for (int attempt = 0; attempt < 8 && found < 2; attempt++) {
                 int ox = random.nextInt(33) - 16;
                 int oz = random.nextInt(33) - 16;
                 int bx = loc.getBlockX() + ox;
                 int bz = loc.getBlockZ() + oz;
-                int by = world.getHighestBlockYAt(bx, bz) - 1;
 
-                Block block = world.getBlockAt(bx, by, bz);
-                if (block.getType() == Material.GRASS_BLOCK) {
-                    // Áp dụng bone-meal: tạo hoa/cỏ mọc
-                    block.applyBoneMeal(org.bukkit.block.BlockFace.UP);
-                    // Particle xanh lá tại vị trí nảy mầm
-                    Location blockLoc = block.getLocation().add(0.5, 1.2, 0.5);
-                    world.spawnParticle(Particle.HAPPY_VILLAGER, blockLoc, 3, 0.3, 0.3, 0.3, 0);
-                    break;
+                // Tìm surface block thực sự (quét từ trên xuống)
+                int topY = world.getHighestBlockYAt(bx, bz);
+                Block surface = world.getBlockAt(bx, topY, bz);
+                // Lùi xuống 1 nếu highest là không khí
+                if (surface.getType() == Material.AIR) {
+                    surface = world.getBlockAt(bx, topY - 1, bz);
+                }
+
+                if (surface.getType() == Material.GRASS_BLOCK) {
+                    // growNaturally: Paper API — tạo hoa/cỏ trên mặt block
+                    boolean grown = world.growTree(
+                        surface.getLocation().add(0, 1, 0),
+                        TreeType.JUNGLE_BUSH
+                    );
+                    // Fallback: dùng applyBoneMeal trực tiếp
+                    if (!grown) {
+                        surface.applyBoneMeal(org.bukkit.block.BlockFace.UP);
+                    }
+                    // Particle xanh lá
+                    world.spawnParticle(Particle.HAPPY_VILLAGER,
+                        surface.getLocation().add(0.5, 1.3, 0.5),
+                        5, 0.4, 0.3, 0.4, 0);
+                    found++;
                 }
             }
         }
@@ -747,8 +884,6 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         if (player.hasPotionEffect(PotionEffectType.HUNGER)) {
             player.removePotionEffect(PotionEffectType.HUNGER);
             player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 200, 1, true, true));
-            player.sendActionBar(Component.text("💧 Mát lạnh! Giải nhiệt bằng nước! +Tốc Độ II (10s)")
-                    .color(NamedTextColor.AQUA));
         }
     }
 
@@ -787,14 +922,10 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         switch (mua) {
             case "ha" -> {
                 player.setFireTicks(80);
-                player.sendActionBar(Component.text("🔥 Mùa Hạ | Đòn lửa từ quái! Cháy 4 giây!")
-                        .color(NamedTextColor.RED));
             }
             case "dong" -> {
                 player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 100, 1, true, true));
                 player.setFreezeTicks(Math.min(player.getFreezeTicks() + 60, 140));
-                player.sendActionBar(Component.text("❄ Mùa Đông | Đòn băng từ quái! Chậm II & Đóng Băng!")
-                        .color(NamedTextColor.BLUE));
             }
         }
     }
@@ -885,8 +1016,8 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * XUÂN: cây lớn nhanh x2 (50% tăng thêm 1 tuổi ngay)
-     * HẠ:   cây lớn x1.5 (33% tăng thêm 1 tuổi) NẾU Farmland ướt, nếu khô → chết
+     * XUÂN: cây lớn nhanh x3 (66% tăng thêm 1 tuổi ngay) — tất cả hạt giống
+     * HẠ:   cây lớn x1.5 (33% tăng thêm 1 tuổi) NẾU Farmland ướt, nếu khô → chết — tất cả hạt giống
      */
     @EventHandler
     public void onCayPhatTrien(BlockGrowEvent event) {
@@ -897,8 +1028,8 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
 
         switch (mua) {
             case "xuan" -> {
-                // x2: 50% tăng thêm 1 tuổi
-                if (random.nextBoolean()) return;
+                // x3: 66% tăng thêm 1 tuổi ngay (thay vì chờ grow tự nhiên)
+                if (random.nextInt(3) == 0) return;
                 tangTuoiCay(event);
             }
             case "ha" -> {
@@ -912,11 +1043,7 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
                             event.setCancelled(true);
                             block.setType(Material.AIR);
                             duoi.setType(Material.DIRT);
-                            // Thông báo nếu có người gần
-                            for (Player p : block.getWorld().getNearbyPlayers(block.getLocation(), 16)) {
-                                p.sendActionBar(Component.text("🌵 Mùa Hạ | Cây trồng chết vì hạn hán! Tưới nước đi!")
-                                        .color(NamedTextColor.GOLD));
-                            }
+                            // (thông báo actionbar đã bị tắt)
                             return;
                         }
                     }
@@ -964,7 +1091,13 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
 
         Block block = event.getBlock();
         Material mat = block.getType();
-        if (mat != Material.WHEAT && mat != Material.CARROTS && mat != Material.POTATOES) return;
+        // Tất cả loại hạt giống/cây trồng
+        if (mat != Material.WHEAT && mat != Material.CARROTS
+                && mat != Material.POTATOES && mat != Material.BEETROOTS
+                && mat != Material.MELON_STEM && mat != Material.PUMPKIN_STEM
+                && mat != Material.NETHER_WART && mat != Material.COCOA
+                && mat != Material.SWEET_BERRY_BUSH && mat != Material.TORCHFLOWER_CROP
+                && mat != Material.PITCHER_CROP) return;
 
         // Kiểm tra không có mái che
         int highestY = world.getHighestBlockYAt(block.getLocation());
@@ -1074,12 +1207,12 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         String tagEp = (overrideMua != null) ? " §c[Ép]" : "";
         String conLai = (overrideMua == null) ? " §7(" + ngayConLai + "n)" : " §c[Ép]";
 
-        // Scoreboard gọn: 7 dòng, không có kẻ ngang
-        setDong(obj, "§f" + player.getName(), 7);
-        setDong(obj, "§7Online §f" + soOnline + " §7| Ngày §f" + tongNgay, 6);
-        setDong(obj, maMauMua + tenMuaHienThi + conLai, 5);
-        setDong(obj, trangThaiMua, 4);
-        setDong(obj, iconThoiGian + " §f" + tenThoiGian, 3);
+        // Scoreboard: giống ảnh mẫu — nhãn trái, không số cạnh phải
+        setDong(obj, "§fTên: §e" + player.getName(), 8);
+        setDong(obj, "§fOnline: §a" + soOnline + "/20", 7);
+        setDong(obj, "§fNgày: §e" + tongNgay, 6);
+        setDong(obj, "§fMùa: " + maMauMua + tenMuaHienThi + tagEp, 5);
+        setDong(obj, "§fThời gian: " + iconThoiGian + " §f" + tenThoiGian, 4);
 
         player.setScoreboard(board);
     }
@@ -1190,7 +1323,7 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
     }
 
     private void hienThiHelpSeason(CommandSender sender) {
-        sender.sendMessage("§6=====[ HƯỚNG DẪN /SEASON v2.1 ]=====");
+        sender.sendMessage("§6=====[ HƯỚNG DẪN /SEASON v2.2 ]=====");
         sender.sendMessage("§e/season info §7- Xem thông tin mùa hiện tại.");
         sender.sendMessage("§e/season set <xuan|ha|thu|dong> §7- Ép mùa. §c(Admin)");
         sender.sendMessage("§e/season reset §7- Gỡ ép mùa. §c(Admin)");
