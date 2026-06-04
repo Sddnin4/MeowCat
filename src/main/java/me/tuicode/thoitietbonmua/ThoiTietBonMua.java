@@ -20,6 +20,11 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
+import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.player.PlayerFishEvent;
+import org.bukkit.event.block.BlockDropItemEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.PotionMeta;
@@ -601,13 +606,19 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
      *   - FreezeTicks tăng ngoài trời nếu không có bảo vệ
      */
     private void hieuUngDong(Player player, Location loc, World world) {
-        // Tuyết rơi luôn luôn
-        for (int i = 0; i < 5; i++) {
-            double ox = (random.nextDouble() - 0.5) * 4.0;
-            double oy = random.nextDouble() * 4.0;
-            double oz = (random.nextDouble() - 0.5) * 4.0;
-            loc.getWorld().spawnParticle(Particle.SNOWFLAKE,
-                    loc.clone().add(ox, oy, oz), 1, 0, -0.1, 0, 0);
+        // Tuyết rơi diện rộng MỌI biome — lưới 20x20 block, rơi từ trên cao
+        // Không phụ thuộc vào biome có tuyết tự nhiên hay không
+        for (int i = 0; i < 20; i++) {
+            double ox = (random.nextDouble() - 0.5) * 20.0;
+            double oy = random.nextDouble() * 6.0 + 3.0; // từ 3–9 block trên đầu
+            double oz = (random.nextDouble() - 0.5) * 20.0;
+            loc.getWorld().spawnParticle(
+                    Particle.SNOWFLAKE,
+                    loc.clone().add(ox, oy, oz),
+                    1,
+                    0.0, -0.15, 0.0,  // hướng rơi xuống
+                    0.02               // tốc độ nhẹ để không rơi thẳng cứng
+            );
         }
 
         // Sương mù ban đêm: CLOUD dày
@@ -1118,32 +1129,54 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         }
     }
 
+    // ══════════════════════════════════════════════════════════════
+    //  MÙA THU x2 TẤT CẢ DROP
+    //  Áp dụng: đào block, giết mob, câu cá, nhặt item
+    // ══════════════════════════════════════════════════════════════
+
     /**
-     * THU HOẠCH MÙA THU: Wheat chín rơi x2 (thêm 1 lúa mì bổ sung).
-     * Thêm: Carrot, Potato, Beetroot cũng được x2.
+     * Đào/phá block mùa thu → nhân đôi toàn bộ drop tự nhiên.
+     * Dùng BlockDropItemEvent (Paper API) để intercept item trước khi rơi.
      */
     @EventHandler
-    public void onHarvestAutumn(BlockBreakEvent event) {
-        World world = event.getBlock().getWorld();
-        if (!getMuaHienTai(world).equals("thu")) return;
+    public void onBlockDropThu(BlockDropItemEvent event) {
+        if (!getMuaHienTai(event.getBlock().getWorld()).equals("thu")) return;
+        // Nhân đôi số lượng từng stack item drop
+        for (org.bukkit.entity.Item item : event.getItems()) {
+            ItemStack stack = item.getItemStack();
+            stack.setAmount(Math.min(stack.getAmount() * 2, stack.getMaxStackSize()));
+            item.setItemStack(stack);
+        }
+    }
 
-        Block block = event.getBlock();
+    /**
+     * Giết mob/quái vật mùa thu → nhân đôi toàn bộ drop.
+     */
+    @EventHandler
+    public void onMobDropThu(EntityDeathEvent event) {
+        if (!getMuaHienTai(event.getEntity().getWorld()).equals("thu")) return;
+        // Nhân đôi từng stack trong drops list
+        for (ItemStack drop : event.getDrops()) {
+            if (drop != null) {
+                drop.setAmount(Math.min(drop.getAmount() * 2, drop.getMaxStackSize()));
+            }
+        }
+        // Nhân đôi cả EXP
+        event.setDroppedExp(event.getDroppedExp() * 2);
+    }
 
-        // Chỉ khi cây đã chín
-        if (!(block.getBlockData() instanceof Ageable ageable)) return;
-        if (ageable.getAge() < ageable.getMaximumAge()) return;
+    /**
+     * Câu cá mùa thu → nhân đôi item câu được.
+     */
+    @EventHandler
+    public void onFishThu(PlayerFishEvent event) {
+        if (!getMuaHienTai(event.getPlayer().getWorld()).equals("thu")) return;
+        if (event.getState() != PlayerFishEvent.State.CAUGHT_FISH) return;
+        if (!(event.getCaught() instanceof org.bukkit.entity.Item caughtItem)) return;
 
-        Material dropMat = switch (block.getType()) {
-            case WHEAT    -> Material.WHEAT;
-            case CARROTS  -> Material.CARROT;
-            case POTATOES -> Material.POTATO;
-            case BEETROOTS -> Material.BEETROOT;
-            default -> null;
-        };
-        if (dropMat == null) return;
-
-        // Rơi thêm 1 vật phẩm
-        block.getWorld().dropItemNaturally(block.getLocation(), new ItemStack(dropMat, 1));
+        ItemStack stack = caughtItem.getItemStack();
+        stack.setAmount(Math.min(stack.getAmount() * 2, stack.getMaxStackSize()));
+        caughtItem.setItemStack(stack);
     }
 
     // ══════════════════════════════════════════════════════════════
