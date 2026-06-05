@@ -25,6 +25,11 @@ import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.NamespacedKey;
+import java.util.concurrent.ThreadLocalRandom;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.PotionMeta;
@@ -100,6 +105,17 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
     // ══════════════════════════════════════════════════════════════
 
     private final Random random = new Random();
+
+    // ── Mùa Thu - Anti-Duping & Ngày Đặc Biệt ────────────────────
+    /** NamespacedKey đánh dấu item đã được nhân đôi — chống dupe. */
+    private NamespacedKey keyDoubled;
+
+    /**
+     * Ngày đặc biệt ngẫu nhiên trong chu kỳ 90 ngày Mùa Thu (1–90).
+     * Ngày này cộng thêm +5% vào tỉ lệ x2.
+     * Được random lại mỗi khi Mùa Thu bắt đầu.
+     */
+    private int specialFallDay = ThreadLocalRandom.current().nextInt(1, 91);
 
     /** Biến ép mùa của Admin. null = tự động theo ngày. */
     private String overrideMua = null;
@@ -1130,38 +1146,158 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  MÙA THU x2 TẤT CẢ DROP
-    //  Áp dụng: đào block, giết mob, câu cá, nhặt item
+    //  MÙA THU — HỆ THỐNG X2 NÔNG SẢN (v2.2 Refactor)
+    //
+    //  Xác suất cơ bản: 15%
+    //  Bonus Fortune (Cúp/Rìu): +3% (I) / +5% (II) / +8% (III)
+    //  Bonus Ngày Đặc Biệt: +5% (1 ngày random/chu kỳ 90 ngày)
+    //
+    //  Điều kiện: cầm Cúp hoặc Rìu + cây đạt Maximum Age
+    //  Anti-Dupe: PersistentDataContainer tag "thoitietbonmua:doubled"
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * Đào/phá block mùa thu → nhân đôi toàn bộ drop tự nhiên.
-     * Dùng BlockDropItemEvent (Paper API) để intercept item trước khi rơi.
+     * Tính xác suất x2 dựa trên Fortune cầm trên tay + Ngày Đặc Biệt.
+     *
+     * @param tool  Vật phẩm cầm trên tay của người chơi
+     * @param world Thế giới (để lấy ngày trong mùa)
+     * @return xác suất từ 0.0 đến 1.0
+     */
+    private double tinhXacSuatThu(ItemStack tool, World world) {
+        double xacSuat = 0.15; // 15% cơ bản
+
+        // Bonus Fortune — chỉ tính nếu là Cúp hoặc Rìu
+        if (tool != null && isCupHoacRiu(tool.getType())) {
+            int fortuneLevel = tool.getEnchantmentLevel(Enchantment.FORTUNE);
+            xacSuat += switch (fortuneLevel) {
+                case 1 -> 0.03;
+                case 2 -> 0.05;
+                case 3 -> 0.08;
+                default -> 0.0;
+            };
+        }
+
+        // Bonus Ngày Đặc Biệt
+        long ngayTrongMua = getNgayTrongMua(world);
+        if (ngayTrongMua == specialFallDay) {
+            xacSuat += 0.05;
+        }
+
+        return xacSuat;
+    }
+
+    /** Trả về true nếu Material là Cúp (Pickaxe) hoặc Rìu (Axe). */
+    private boolean isCupHoacRiu(Material mat) {
+        return switch (mat) {
+            case WOODEN_PICKAXE, STONE_PICKAXE, IRON_PICKAXE,
+                 GOLDEN_PICKAXE, DIAMOND_PICKAXE, NETHERITE_PICKAXE,
+                 WOODEN_AXE, STONE_AXE, IRON_AXE,
+                 GOLDEN_AXE, DIAMOND_AXE, NETHERITE_AXE -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Kiểm tra item đã bị nhân đôi chưa (anti-dupe).
+     * Dùng PersistentDataContainer với key "thoitietbonmua:doubled".
+     */
+    private boolean daDoubled(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        PersistentDataContainer pdc = item.getItemMeta().getPersistentDataContainer();
+        return pdc.has(keyDoubled, PersistentDataType.BYTE);
+    }
+
+    /**
+     * Gắn tag "doubled" vào item để chống dupe.
+     * Trả về item đã được gắn tag.
+     */
+    private ItemStack ganTagDoubled(ItemStack item) {
+        if (item == null) return null;
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return item;
+        meta.getPersistentDataContainer().set(keyDoubled, PersistentDataType.BYTE, (byte) 1);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    /**
+     * THU HOẠCH MÙA THU — NÔNG SẢN (BlockDropItemEvent):
+     *
+     * Chỉ áp dụng khi:
+     *   1. Mùa hiện tại là Thu
+     *   2. Người chơi cầm Cúp hoặc Rìu
+     *   3. Block là cây trồng đạt Maximum Age (đã chín)
+     *   4. Item chưa có tag "doubled" (anti-dupe)
+     *
+     * Xác suất x2 = 15% base + Fortune bonus + Ngày Đặc Biệt bonus
      */
     @EventHandler
     public void onBlockDropThu(BlockDropItemEvent event) {
         if (!getMuaHienTai(event.getBlock().getWorld()).equals("thu")) return;
-        // Nhân đôi số lượng từng stack item drop
-        for (org.bukkit.entity.Item item : event.getItems()) {
-            ItemStack stack = item.getItemStack();
-            stack.setAmount(Math.min(stack.getAmount() * 2, stack.getMaxStackSize()));
-            item.setItemStack(stack);
+
+        // Điều kiện 1: phải có người chơi thực hiện
+        if (!(event.getPlayer() instanceof Player player)) return;
+
+        // Điều kiện 2: cầm Cúp hoặc Rìu
+        ItemStack tool = player.getInventory().getItemInMainHand();
+        if (!isCupHoacRiu(tool.getType())) return;
+
+        // Điều kiện 3: block phải là cây trồng đã chín
+        Block block = event.getBlock();
+        if (!isCayDaChin(block)) return;
+
+        // Tính xác suất x2
+        double xacSuat = tinhXacSuatThu(tool, player.getWorld());
+        if (ThreadLocalRandom.current().nextDouble() > xacSuat) return;
+
+        // Nhân đôi từng item drop (anti-dupe check)
+        for (org.bukkit.entity.Item droppedItem : event.getItems()) {
+            ItemStack stack = droppedItem.getItemStack();
+
+            // Bỏ qua nếu đã doubled
+            if (daDoubled(stack)) continue;
+
+            // Gắn tag vào item GỐC trước
+            ganTagDoubled(stack);
+            droppedItem.setItemStack(stack);
+
+            // Tạo item NHÂN ĐÔI (clone + gắn tag ngay)
+            ItemStack bonus = stack.clone();
+            bonus.setAmount(stack.getAmount());
+            ganTagDoubled(bonus);
+
+            // Thả item bonus xuống đất
+            block.getWorld().dropItemNaturally(block.getLocation(), bonus);
         }
     }
 
     /**
-     * Giết mob/quái vật mùa thu → nhân đôi toàn bộ drop.
+     * Kiểm tra block có phải cây trồng đã đạt Maximum Age không.
+     * Áp dụng: Wheat, Carrots, Potatoes, Beetroots, Nether Wart,
+     *          Melon Stem, Pumpkin Stem, Cocoa, Sweet Berry Bush,
+     *          Torchflower Crop, Pitcher Crop.
+     */
+    private boolean isCayDaChin(Block block) {
+        if (!(block.getBlockData() instanceof Ageable ageable)) return false;
+        return ageable.getAge() >= ageable.getMaximumAge();
+    }
+
+    /**
+     * Giết mob/quái vật mùa thu → nhân đôi toàn bộ drop + x2 EXP.
+     * Không yêu cầu Fortune vì đây là combat, không phải thu hoạch.
      */
     @EventHandler
     public void onMobDropThu(EntityDeathEvent event) {
         if (!getMuaHienTai(event.getEntity().getWorld()).equals("thu")) return;
-        // Nhân đôi từng stack trong drops list
+
+        // Chỉ khi bị kill bởi Player
+        if (!(event.getEntity().getKiller() instanceof Player)) return;
+
         for (ItemStack drop : event.getDrops()) {
-            if (drop != null) {
-                drop.setAmount(Math.min(drop.getAmount() * 2, drop.getMaxStackSize()));
-            }
+            if (drop == null || daDoubled(drop)) continue;
+            ganTagDoubled(drop);
+            drop.setAmount(Math.min(drop.getAmount() * 2, drop.getMaxStackSize()));
         }
-        // Nhân đôi cả EXP
         event.setDroppedExp(event.getDroppedExp() * 2);
     }
 
@@ -1175,6 +1311,10 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         if (!(event.getCaught() instanceof org.bukkit.entity.Item caughtItem)) return;
 
         ItemStack stack = caughtItem.getItemStack();
+        if (daDoubled(stack)) return;
+
+        // x2 item câu được + gắn tag
+        ganTagDoubled(stack);
         stack.setAmount(Math.min(stack.getAmount() * 2, stack.getMaxStackSize()));
         caughtItem.setItemStack(stack);
     }
