@@ -169,8 +169,7 @@ public class MobSeasonHandler implements Listener {
 
             // Hồi máu dưới mưa hoặc trong nước
             if (mob.getWorld().hasStorm() || mob.getLocation().getBlock().isLiquid()) {
-                double max = mob.getAttribute(
-                        org.bukkit.attribute.Attribute.MAX_HEALTH).getValue();
+                double max = mob.getAttribute(org.bukkit.attribute.Attribute.GENERIC_MAX_HEALTH).getValue();
                 mob.setHealth(Math.min(mob.getHealth() + 0.25, max));
             }
         }
@@ -376,7 +375,7 @@ public class MobSeasonHandler implements Listener {
                 DyeColor.PINK, DyeColor.LIGHT_BLUE, DyeColor.LIME,
                 DyeColor.YELLOW, DyeColor.WHITE, DyeColor.CYAN
         };
-        event.getSheep().setColor(pastels[rng.nextInt(pastels.length)]);
+        ((Sheep) event.getEntity()).setColor(pastels[rng.nextInt(pastels.length)]);
     }
 
     // ─── 6. Tự động sinh sản ─────────────────────────────────────
@@ -482,7 +481,7 @@ public class MobSeasonHandler implements Listener {
                 target.getWorld().spawnParticle(Particle.CLOUD,
                         target.getLocation().add(0, 1, 0), 20, 0.5, 1, 0.5, 0.06);
                 target.getWorld().playSound(target.getLocation(),
-                        Sound.BLOCK_ICE_BREAK, 1.0f, 1.3f);
+                        Sound.BLOCK_GLASS_BREAK, 1.0f, 1.3f);
                 player.sendMessage(Component.text("❄→🔥 Giáp băng tan vỡ! x2 sát thương!")
                         .color(NamedTextColor.AQUA));
             }
@@ -680,7 +679,7 @@ public class MobSeasonHandler implements Listener {
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (!getMua().equals("thu")) return;
             World world = player.getWorld();
-            world.playSound(player.getLocation(), Sound.WEATHER_WIND, 0.5f, 0.85f);
+            world.playSound(player.getLocation(), Sound.WEATHER_RAIN, 0.5f, 0.85f);
             // Đẩy người chơi
             player.setVelocity(player.getVelocity().add(windVec));
             // Particle gió
@@ -769,7 +768,7 @@ public class MobSeasonHandler implements Listener {
     private void caoDaoBau() {
         for (World world : Bukkit.getWorlds()) {
             for (Fox fox : world.getEntitiesByClass(Fox.class)) {
-                if (!fox.isTamed()) continue;
+                if (!(fox instanceof org.bukkit.entity.Tameable t) || !t.isTamed()) continue;
                 Location foxLoc = fox.getLocation();
                 outerLoop:
                 for (int x = -3; x <= 3; x++) {
@@ -912,7 +911,7 @@ public class MobSeasonHandler implements Listener {
             event.getEntity().getWorld().spawnParticle(Particle.CLOUD,
                     event.getEntity().getLocation().add(0, 1, 0), 20, 0.5, 0.8, 0.5, 0.07);
             event.getEntity().getWorld().playSound(event.getEntity().getLocation(),
-                    Sound.BLOCK_ICE_BREAK, 1.0f, 1.2f);
+                    Sound.BLOCK_GLASS_BREAK, 1.0f, 1.2f);
             return;
         }
 
