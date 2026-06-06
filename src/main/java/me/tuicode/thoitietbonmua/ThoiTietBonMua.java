@@ -1331,7 +1331,7 @@ public class ThoiTietBonMua extends JavaPlugin implements Listener, CommandExecu
         ScoreboardManager manager = getServer().getScoreboardManager();
         Scoreboard board          = manager.getNewScoreboard();
 
-        Component title = Component.text("❖ 10A1 SMP ❖")
+        Component title = Component.text("❖ MeowCat ❖")
                 .color(NamedTextColor.GOLD).decorate(TextDecoration.BOLD);
 
         Objective obj = board.registerNewObjective("smp_info", Criteria.DUMMY, title);
