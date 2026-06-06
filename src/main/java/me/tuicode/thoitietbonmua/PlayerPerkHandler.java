@@ -145,15 +145,17 @@ public class PlayerPerkHandler implements Listener {
                         if (!horse.isValid()) return;
                         horse.addPassenger(player);
                         // Tốc độ +30% — kiểm tra xem đã thêm chưa
-                        var attr = horse.getAttribute(Attribute.MOVEMENT_SPEED);
+                        var attr = horse.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED);
                         if (attr != null) {
                             UUID modId = rideSpeedMods.get(horse.getUniqueId());
                             if (modId == null) {
                                 UUID newId = UUID.randomUUID();
                                 rideSpeedMods.put(horse.getUniqueId(), newId);
                                 attr.addModifier(new AttributeModifier(
-                                        newId, "spring_ride_speed", 0.30,
-                                        AttributeModifier.Operation.MULTIPLY_SCALAR_1));
+                                        new org.bukkit.NamespacedKey(plugin, "spring_ride_speed_" + newId),
+                                        0.30,
+                                        AttributeModifier.Operation.MULTIPLY_SCALAR_1,
+                                        org.bukkit.inventory.EquipmentSlotGroup.ANY));
                             }
                         }
                         player.sendMessage(Component.text(
@@ -183,7 +185,7 @@ public class PlayerPerkHandler implements Listener {
         if (!(event.getVehicle() instanceof AbstractHorse horse)) return;
         UUID modId = rideSpeedMods.remove(horse.getUniqueId());
         if (modId == null) return;
-        var attr = horse.getAttribute(Attribute.MOVEMENT_SPEED);
+        var attr = horse.getAttribute(Attribute.GENERIC_MOVEMENT_SPEED);
         if (attr == null) return;
         attr.getModifiers().stream()
                 .filter(m -> m.getUniqueId().equals(modId))
